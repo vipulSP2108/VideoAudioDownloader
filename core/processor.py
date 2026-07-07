@@ -101,6 +101,8 @@ def process_item(item: Dict) -> Generator[Dict, None, None]:
         'noprogress':       False,
         # Merge video+audio into mp4 when possible
         'merge_output_format': 'mp4',
+        # Bypass 403 errors by using alternative clients
+        'extractor_args': {'youtube': ['player_client=ios,android,web']},
     }
 
     if mode == 'Audio':
