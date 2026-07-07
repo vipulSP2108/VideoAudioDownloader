@@ -35,6 +35,7 @@ for key, default in [
     ("partial_failed",   []),
     ("partial_mode",     "zip"),
     ("show_partial_dlg", False),
+    ("fetched_info",     {}),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -148,22 +149,53 @@ raw_count = len([l.strip() for l in urls_raw.split('\n') if l.strip()])
 deduped_notice = raw_count > len(valid_urls) + len(invalid_raws)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEP 2 — CHOOSE FORMAT & QUALITY
+# STEP 2 — FETCH INFO & CHOOSE FORMAT
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown('<div class="step-label">Step 2 — Choose what you want</div>', unsafe_allow_html=True)
+st.markdown('<div class="step-label">Step 2 — Fetch Info & Choose Format</div>', unsafe_allow_html=True)
 
-col_mode, col_quality = st.columns(2)
-with col_mode:
-    st.markdown('<div class="card-title">🎞 Format</div>', unsafe_allow_html=True)
-    mode = st.radio("Format", ["🎬  Video", "🎵  Audio"], horizontal=True, label_visibility="collapsed")
-    mode_clean = "Video" if "Video" in mode else "Audio"
+if valid_urls:
+    if st.button("Fetch Video Info"):
+        with st.spinner("Fetching information for links..."):
+            st.session_state.fetched_info = {}
+            for url in valid_urls:
+                st.session_state.fetched_info[url] = get_video_info(url)
 
-with col_quality:
-    st.markdown('<div class="card-title">✨ Quality</div>', unsafe_allow_html=True)
-    if mode_clean == "Video":
-        quality = st.radio("Quality", ["Default", "1080p", "720p", "480p", "360p"], horizontal=True, label_visibility="collapsed")
-    else:
-        quality = st.radio("Quality", ["Default", "320kbps", "192kbps", "128kbps"], horizontal=True, label_visibility="collapsed")
+video_selections = {}
+if st.session_state.fetched_info:
+    for url in valid_urls:
+        info = st.session_state.fetched_info.get(url)
+        if not info:
+            continue
+        
+        st.markdown(f"**🔗 {url}**")
+        if not info.get("success"):
+            st.error(f"Failed to fetch info: {info.get('error')}")
+            video_selections[url] = ("Video", "Default")
+            st.markdown("---")
+            continue
+        
+        col1, col2, col3 = st.columns([1, 2, 2])
+        with col1:
+            if info.get("thumbnail"):
+                st.image(info["thumbnail"], use_container_width=True)
+        with col2:
+            st.markdown(f"**{info.get('title')}**")
+            st.caption(f"Duration: {info.get('duration')}")
+            
+            mode_key = f"mode_{url}"
+            mode = st.radio("Format", ["🎬  Video", "🎵  Audio"], horizontal=True, key=mode_key, label_visibility="collapsed")
+            mode_clean = "Video" if "Video" in mode else "Audio"
+        with col3:
+            qual_key = f"qual_{url}"
+            if mode_clean == "Video":
+                options = info.get("resolutions", ["Default"])
+            else:
+                options = info.get("bitrates", ["Default"])
+            
+            quality = st.selectbox("Quality", options, key=qual_key, label_visibility="collapsed")
+            
+        video_selections[url] = (mode_clean, quality)
+        st.markdown("---")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 3 — OUTPUT FORMAT (only for multiple URLs)
@@ -201,7 +233,8 @@ if valid_urls:
 # DOWNLOAD BUTTON
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("<br>", unsafe_allow_html=True)
-start_download = st.button("⬇️  Download Now", type="primary", disabled=len(valid_urls) == 0)
+can_download = len(valid_urls) > 0 and len(st.session_state.fetched_info) > 0
+start_download = st.button("⬇️  Download Now", type="primary", disabled=not can_download)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PARTIAL FAILURE MODAL (Join mode had some failures)
@@ -460,7 +493,12 @@ if start_download and valid_urls:
 
     item_ids = []
     for url in valid_urls:
-        item_id = add_to_queue(url, mode_clean, quality)
+        if url in video_selections:
+            mode_c, qual = video_selections[url]
+        else:
+            mode_c, qual = "Video", "Default"
+            
+        item_id = add_to_queue(url, mode_c, qual)
         item_ids.append(item_id)
 
     queue = get_queue()
@@ -481,7 +519,7 @@ if start_download and valid_urls:
             f'<div class="status-item">'
             f'<div class="status-info">'
             f'<div class="status-title">🔗 {short_url}</div>'
-            f'<div class="status-meta">{platform} · {mode_clean} · {quality}</div>'
+            f'<div class="status-meta">{platform} · {item["mode"]} · {item["quality"]}</div>'
             f'</div></div>',
             unsafe_allow_html=True
         )
